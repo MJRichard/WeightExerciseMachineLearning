@@ -64,24 +64,13 @@ if (window.hljs && document.readyState && document.readyState === "complete") {
 <p>We start by loading in the data. Here we assume it is in the working directory.</p>
 <pre class="r"><code>library(caret)</code></pre>
 <pre><code>## Warning: package 'caret' was built under R version 3.1.2</code></pre>
-<pre><code>## Loading required package: lattice
-## Loading required package: ggplot2</code></pre>
 <pre><code>## Warning: package 'ggplot2' was built under R version 3.1.2</code></pre>
-<pre class="r"><code>library(dplyr)</code></pre>
-<pre><code>## 
-## Attaching package: 'dplyr'
-## 
-## The following object is masked from 'package:stats':
-## 
-##     filter
-## 
-## The following objects are masked from 'package:base':
-## 
-##     intersect, setdiff, setequal, union</code></pre>
-<pre class="r"><code>training&lt;-read.csv('pml-training.csv', header=TRUE)</code></pre>
+<pre class="r"><code>library(dplyr)
+training&lt;-read.csv('pml-training.csv', header=TRUE)</code></pre>
 <p>The data includes 160 variables, some of which are information about the participants and when the measurements are taken. The rest are acceleratometer observations. To build the machine learning algorithm, we must decide which variables to include. By cleaning the data, we will remove several variables. One main feature is the ‘new_window’ which has values of ‘yes’ for 406 entries. For many variables, if ‘new_window’ is no, the values is ‘NA’. So first, we remove any variable which is primarily NA values, bringing it down to 93. Then, removing all ‘new_window’ equals yes observations, there are several variables that are blank. Finally, we remove the first 7 columns, which are not accelerometer observations and do not correspond to the actual exercise, so these are removed. This leaves 53 variables in which to build an algorithm.</p>
 <pre class="r"><code>#significant number of variables have more than 19000 NA values
 training&lt;-training[,sapply(training, function(x) sum(is.na(x))&lt;19000)]
+orig_training&lt;-training
 #removing those factors, down to 93
 
 #406 entries where new windown is yes, ends up with div by 0 errors, other quirks in data, will remove
@@ -92,25 +81,24 @@ training&lt;-training[,!(sapply(training, function(x) all(x=='')))]
 #first 7 columns are not measurements, down to 53
 training&lt;-training[,-c(1:7)]</code></pre>
 <p>A random forest model will be used to predict. This model is useful becuase preliminary models will provide input on the importance of the variables to fine tune. In addition, random forest provide high accuracy and will not overfit the data because it is an ensemble model.</p>
-<p>To save on computing time, the first model is built with a subset of 2000 observations. In addition, the model will use 4 folds (default of 10 in R), for cross validation. Already, the model gets 92% accuracy for out of sample data from cross validation using the folds.</p>
+<p>To save on computing time, the first model is built with a subset of 2000 observations. In addition, the model will use 4 folds (default of 10 in R), for cross validation. Already, the model gets 92% accuracy for out of sample data from cross validation using the folds. So with some fine tuning by using less variables and more observations, we should end up with a good model.</p>
 <p>Then, the varImp function is used to evauluate the variables. varImp scales them from 0 to 100, so we decide to build the second model of variables that are given an importance greater than 10.</p>
 <pre class="r"><code>set.seed(1931)
-trsample&lt;-sample_n(training, 2000)
-
-#4 folds to make it faster
+trsample&lt;-sample_n(training, 2000)</code></pre>
+<pre class="r"><code>#4 folds to make it faster
 firstmodel&lt;-train(classe~., data=trsample, method='rf', trControl=trainControl(number=4))</code></pre>
-<pre><code>## Loading required package: randomForest</code></pre>
-<pre><code>## Warning: package 'randomForest' was built under R version 3.1.2</code></pre>
-<pre><code>## randomForest 4.6-10
-## Type rfNews() to see new features/changes/bug fixes.</code></pre>
 <pre class="r"><code>firstmodel$results #show accuracy</code></pre>
 <pre><code>##   mtry  Accuracy     Kappa AccuracySD    KappaSD
 ## 1    2 0.9206305 0.8996088 0.01187527 0.01508345
 ## 2   27 0.9254161 0.9056981 0.01160162 0.01461127
 ## 3   52 0.9146090 0.8920828 0.01841397 0.02328772</code></pre>
 <pre class="r"><code>#model worked best with 27 variables
-sampleranking&lt;-as.data.frame(varImp(firstmodel)[1])
-#most important is ranked 100, so take anything over 10
+sampleranking&lt;-as.data.frame(varImp(firstmodel)[1])</code></pre>
+<pre><code>## Loading required package: randomForest</code></pre>
+<pre><code>## Warning: package 'randomForest' was built under R version 3.1.2</code></pre>
+<pre><code>## randomForest 4.6-10
+## Type rfNews() to see new features/changes/bug fixes.</code></pre>
+<pre class="r"><code>#most important is ranked 100, so take anything over 10
 #still include classe
 samplenames&lt;- rownames(sampleranking)[sampleranking$Overall&gt;10]
 training&lt;-training[c(samplenames, 'classe')]</code></pre>
@@ -119,7 +107,7 @@ training&lt;-training[c(samplenames, 'classe')]</code></pre>
 secondmodel&lt;-train(classe~., data=trsample2, method='rf', trControl=trainControl(number=5))
 #works well, doesn't take too long, stick with same variables, 96%accuracy
 table(predict(secondmodel, training), training$classe)</code></pre>
-<p>The final model is using all of the entries of the data set. And results in 99% accuracy</p>
+<p>The final model is using all of the entries of the data set. And this results in 99% accuracy from cross validation using 5 folds.</p>
 <pre class="r"><code>finalmodel&lt;-train(classe~., data=training, method='rf', trControl=trainControl(number=5))</code></pre>
 <pre class="r"><code>finalmodel$results</code></pre>
 <pre><code>##   mtry  Accuracy     Kappa  AccuracySD     KappaSD
@@ -127,15 +115,15 @@ table(predict(secondmodel, training), training$classe)</code></pre>
 ## 2   10 0.9904058 0.9878623 0.001205539 0.001522972
 ## 3   19 0.9822589 0.9775567 0.002080994 0.002622519</code></pre>
 <pre class="r"><code>#99 percent accuracy
-#perfectly predicts training set
-table(predict(finalmodel, training), training$classe)</code></pre>
+#Very few mistakes from original data set
+table(predict(finalmodel, orig_training), orig_training$classe)</code></pre>
 <pre><code>##    
 ##        A    B    C    D    E
-##   A 5471    0    0    0    0
-##   B    0 3718    0    0    0
-##   C    0    0 3352    0    0
-##   D    0    0    0 3147    0
-##   E    0    0    0    0 3528</code></pre>
+##   A 5580    1    0    0    0
+##   B    0 3796    0    0    0
+##   C    0    0 3422    1    1
+##   D    0    0    0 3215    0
+##   E    0    0    0    0 3606</code></pre>
 
 
 </div>

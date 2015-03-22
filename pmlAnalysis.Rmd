@@ -84,6 +84,6 @@ finalmodel<-train(classe~., data=training, method='rf', trControl=trainControl(n
 
 finalmodel$results
 #99 percent accuracy
-#perfectly predicts training set
+#Very few mistakes from original data set
 table(predict(finalmodel, orig_training), orig_training$classe)
 ```
