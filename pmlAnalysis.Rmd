@@ -1,0 +1,89 @@
+---
+title: "Weight Lifting Machine Learning Analysis"
+author: "Martin Richard"
+date: "March 19, 2015"
+output: html_document
+---
+
+In this document, we describe the development of a machine learning algorithm to determine whether a dumbbell weightlifting curl was performed correctly or the manner in which it was performed incorrectly. The data was collected by placing accelerometers on the belt, forearm, arm and dumbell of the 6 participants performing 1 set of 10 repetitions in 1 correct and 4 incorrect ways. More information is available [here](http://groupware.les.inf.puc-rio.br/har). 
+
+The training data for our algorithm can be downloaded [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv).
+
+We start by loading in the data. Here we assume it is in the working directory.
+
+```{r, message=FALSE}
+
+library(caret)
+library(dplyr)
+training<-read.csv('pml-training.csv', header=TRUE)
+```
+
+The data includes 160 variables, some of which are information about the participants and when the measurements are taken. The rest are acceleratometer observations. To build the machine learning algorithm, we must decide which variables to include. By cleaning the data, we will remove several variables. One main feature is the 'new_window' which has values of 'yes' for 406 entries. For many variables, if 'new_window' is no, the values is 'NA'. So first, we remove any variable which is primarily NA values, bringing it down to 93. Then, removing all 'new_window' equals yes observations, there are several variables that are blank. Finally, we remove the first 7 columns, which are not accelerometer observations and do not correspond to the actual exercise, so these are removed. This leaves 53 variables in which to build an algorithm.
+
+```{r}
+
+#significant number of variables have more than 19000 NA values
+training<-training[,sapply(training, function(x) sum(is.na(x))<19000)]
+orig_training<-training
+#removing those factors, down to 93
+
+#406 entries where new windown is yes, ends up with div by 0 errors, other quirks in data, will remove
+training<-training[(training$new_window)=='no',]
+#now remove blank variables
+training<-training[,!(sapply(training, function(x) all(x=='')))]
+#training<-training[,-new_window]
+#first 7 columns are not measurements, down to 53
+training<-training[,-c(1:7)]
+```
+
+A random forest model will be used to predict. This model is useful becuase preliminary models will provide input on the importance of the variables to fine tune. In addition, random forest provide high accuracy and will not overfit the data because it is an ensemble model.
+
+To save on computing time, the first model is built with a subset of 2000 observations. In addition, the model will use 4 folds (default of 10 in R), for cross validation. Already, the model gets 92% accuracy for out of sample data from cross validation using the folds. So with some fine tuning by using less variables and more observations, we should end up with a good model.
+
+Then, the varImp function is used to evauluate the variables. varImp scales them from 0 to 100, so we decide to build the second model of variables that are given an importance greater than 10.
+
+```{r}
+set.seed(1931)
+trsample<-sample_n(training, 2000)
+```
+
+```{r, cache=TRUE}
+#4 folds to make it faster
+firstmodel<-train(classe~., data=trsample, method='rf', trControl=trainControl(number=4))
+```
+
+```{r}
+firstmodel$results #show accuracy
+#model worked best with 27 variables
+sampleranking<-as.data.frame(varImp(firstmodel)[1])
+#most important is ranked 100, so take anything over 10
+#still include classe
+samplenames<- rownames(sampleranking)[sampleranking$Overall>10]
+training<-training[c(samplenames, 'classe')]
+```
+
+For the second model, we use more observations, so the model will be more accurate and also add another fold. This model has a high enough accuracy, that we will build the final model using the entire dataset and the same number of variables. We will not show this model here because the final model produces similar results.
+
+
+```{r,eval=FALSE}
+
+trsample2<-sample_n(training, 5000)
+secondmodel<-train(classe~., data=trsample2, method='rf', trControl=trainControl(number=5))
+#works well, doesn't take too long, stick with same variables, 96%accuracy
+table(predict(secondmodel, training), training$classe)
+```
+
+The final model is using all of the entries of the data set. And this results in 99% accuracy from cross validation using 5 folds.
+
+```{r, cache=TRUE}
+
+finalmodel<-train(classe~., data=training, method='rf', trControl=trainControl(number=5))
+```
+
+```{r}
+
+finalmodel$results
+#99 percent accuracy
+#perfectly predicts training set
+table(predict(finalmodel, orig_training), orig_training$classe)
+```
